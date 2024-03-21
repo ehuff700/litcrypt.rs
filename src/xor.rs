@@ -26,6 +26,8 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+use alloc::vec::Vec;
+
 /// Returns result of a XOR operation applied to a `source` byte sequence.
 ///
 /// `key` will be an infinitely repeating byte sequence.

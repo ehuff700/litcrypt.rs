@@ -62,6 +62,8 @@
 //! For working example code see `./examples` directory, and test using:
 //!
 //!     $ cargo run --example simple
+#![no_std]
+include!(concat!(env!("OUT_DIR"), "/constants.rs"));
 
 #[cfg(test)]
 #[macro_use(expect)]
@@ -71,36 +73,22 @@ extern crate proc_macro2;
 extern crate quote;
 extern crate rand;
 extern crate syn;
+extern crate alloc;
 
-use std::env;
+use alloc::borrow::ToOwned;
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
 
 use proc_macro::{TokenStream, TokenTree};
 use proc_macro2::Literal;
 use quote::quote;
-use rand::{rngs::OsRng, RngCore};
 use syn::{parse_macro_input, Expr, ExprGroup, ExprLit, Lit};
 
 mod xor;
 
-lazy_static::lazy_static! {
-	static ref RAND_SPELL: [u8; 64] = {
-		let mut key = [0u8; 64];
-		OsRng.fill_bytes(&mut key);
-		key
-	};
-}
-
 #[inline(always)]
 fn get_magic_spell() -> Vec<u8> {
-	match env::var("LITCRYPT_ENCRYPT_KEY") {
-		Ok(key) => key.as_bytes().to_vec(),
-		Err(_) => {
-			// `lc!` will call this function multi times
-			// we must provide exact same result for each invocation
-			// so use static lazy field for cache
-			RAND_SPELL.to_vec()
-		},
-	}
+	XOR_KEY.to_vec()
 }
 
 /// Sets the encryption key used for encrypting subsequence strings wrapped in a
@@ -113,6 +101,9 @@ pub fn use_litcrypt(_tokens: TokenStream) -> TokenStream {
 
 	let encdec_func = quote! {
 		pub mod litcrypt_internal {
+			use alloc::vec::Vec;
+			use alloc::string::String;
+
 			// This XOR code taken from https://github.com/zummenix/xor-rs
 			/// Returns result of a XOR operation applied to a `source` byte sequence.
 			///
@@ -210,23 +201,6 @@ pub fn lc(tokens: TokenStream) -> TokenStream {
 	encrypt_string(something)
 }
 
-/// Encrypts an environment variable at compile time with the key set before,
-/// via calling [`use_litcrypt!`].
-#[proc_macro]
-pub fn lc_env(tokens: TokenStream) -> TokenStream {
-	let mut var_name = String::from("");
-
-	for tok in tokens {
-		var_name = match tok {
-			TokenTree::Literal(lit) => lit.to_string(),
-			_ => "<unknown>".to_owned(),
-		}
-	}
-
-	var_name = String::from(&var_name[1..var_name.len() - 1]);
-
-	encrypt_string(env::var(var_name).unwrap_or(String::from("unknown")))
-}
 
 #[proc_macro]
 /// Encrypts dynamic values at compile time with the
@@ -237,7 +211,7 @@ pub fn lc_dynamic(tokens: TokenStream) -> TokenStream {
 		Expr::Lit(ExprLit {
 			lit: Lit::Str(lit_str), ..
 		}) => lit_str.value(),
-		Expr::Group(ExprGroup { expr: expr, .. }) => {
+		Expr::Group(ExprGroup { expr, .. }) => {
 			let downcasted = match *expr {
 				Expr::Lit(ExprLit {
 					lit: Lit::Str(lit_str), ..
